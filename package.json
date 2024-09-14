@@ -10,12 +10,21 @@
     "test": "npm run lint && npm run build"
   },
   "dependencies": {
-    "next": "14.0.3",
+    "@react-three/drei": "^9.112.0",
+    "@react-three/fiber": "^8.17.7",
+    "form-data": "^4.0.0",
+    "formdata-node": "^6.0.3",
+    "formidable": "^3.5.1",
+    "jszip": "^3.10.1",
+    "next": "^14.2.11",
     "react": "^18",
     "react-dom": "^18",
-    "replicate": "^0.22.0"
+    "replicate": "^0.22.0",
+    "three": "^0.168.0"
   },
   "devDependencies": {
+    "@types/formidable": "^3.4.5",
+    "@types/jszip": "^3.4.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
