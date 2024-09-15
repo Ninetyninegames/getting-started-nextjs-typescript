@@ -1,5 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'; // AWS SDK v3 for S3
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import Replicate from 'replicate';
+import { v4 as uuidv4 } from 'uuid';
+
+// Initialize AWS S3 client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
 
 // Initialize Replicate client
 const replicate = new Replicate({
@@ -14,112 +26,84 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
 
+    // Log the entire formData for debugging purposes
+    console.log('Received formData:');
+    formData.forEach((value, key) => {
+      console.log(`${key}:`, value);
+    });
+
     const modelType = formData.get('model_type') as string;
+    console.log('Model Type:', modelType); // Check if the model_type is correctly received
 
     let prediction;
 
-    if (modelType === 'dynamic_glb') {
+    if (modelType === 'generate_obj_texture') {
+      // Handle OBJ texture generation
+
       const prompt = formData.get('prompt') as string;
-      const useFastConfigs = formData.get('use_fast_configs') === 'on';
-      const guidanceScaleValue = formData.get('guidance_scale');
-      const guidanceScale = guidanceScaleValue ? parseFloat(guidanceScaleValue.toString()) : undefined;
-      const numStepsValue = formData.get('num_steps');
-      const numSteps = numStepsValue ? parseInt(numStepsValue.toString()) : undefined;
-      const seedValue = formData.get('seed');
-      const seed = seedValue ? parseInt(seedValue.toString()) : undefined;
-      const imageType = formData.get('image_type') as string;
+      const shapePath = formData.get('shape_path') as File;
+      console.log('Shape Path:', shapePath);
 
-      let imageUrl: string | undefined;
-
-      if (imageType === 'url') {
-        imageUrl = formData.get('image_url') as string;
-      } else if (imageType === 'upload') {
-        const file = formData.get('image');
-
-        if (!file || typeof file === 'string') {
-          return NextResponse.json({ error: 'No image file provided' }, { status: 400 });
-        }
-
-        // Read the file content
-        const arrayBuffer = await (file as File).arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        // Create a FormData to upload the file
-        const uploadFormData = new FormData();
-        uploadFormData.append('file', new Blob([buffer], { type: file.type }), (file as File).name);
-
-        // Upload the file
-        const uploadResponse = await fetch('https://replicate.com/api/upload', {
-          method: 'POST',
-          body: uploadFormData,
-        });
-
-        if (!uploadResponse.ok) {
-          const errorText = await uploadResponse.text();
-          console.error('Error uploading image:', errorText);
-          return NextResponse.json({ error: 'Error uploading image' }, { status: 500 });
-        }
-
-        const uploadResult = await uploadResponse.json();
-        imageUrl = uploadResult.url;
+      if (!shapePath) {
+        console.error('No shape_path provided');
+        return NextResponse.json({ error: 'No shape_path provided' }, { status: 400 });
       }
 
-      // Build the input object dynamically
-      const input: any = {
-        prompt,
-        image: imageUrl,
+      // Log the shape_path file details
+      console.log('Shape Path Details - Name:', shapePath.name, 'Size:', shapePath.size);
+
+      const arrayBuffer = await shapePath.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      // Upload to S3
+      const fileName = `${uuidv4()}-${shapePath.name}`;
+      const uploadParams = {
+        Bucket: process.env.AWS_S3_BUCKET_NAME, // Ensure this environment variable is set
+        Key: fileName,
+        Body: buffer,
+        ContentType: shapePath.type,
       };
 
-      if (useFastConfigs) {
-        input.use_fast_configs = useFastConfigs;
-      }
-      if (guidanceScale !== undefined) {
-        input.guidance_scale = guidanceScale;
-      }
-      if (numSteps !== undefined) {
-        input.num_steps = numSteps;
-      }
-      if (seed !== undefined) {
-        input.seed = seed;
-      }
+      const uploadCommand = new PutObjectCommand(uploadParams);
+      await s3Client.send(uploadCommand);
+
+      // Get the signed URL for the uploaded file
+      const signedUrl = await getSignedUrl(s3Client, uploadCommand, { expiresIn: 3600 });
+
+      // Input for Replicate API
+      const input = {
+        prompt,
+        shape_path: signedUrl,
+        shape_scale: formData.get('shape_scale') || '0.6',
+        texture_resolution: formData.get('texture_resolution') || '1024',
+        guidance_scale: formData.get('guidance_scale') || '10',
+        texture_interpolation_mode: formData.get('texture_interpolation_mode') || 'bilinear',
+        seed: formData.get('seed') || '0',
+      };
+
+      console.log('Input for OBJ texture generation:', input);
 
       prediction = await replicate.predictions.create({
-        version: 'your_dynamic_glb_model_version_id', // Replace with your actual model version ID
+        version: '456e72c47358d0da0a1b3002c8cf9f4eb123afa4bb8ff2b521fea40a71746a7f', // Your OBJ texture model version
         input,
       });
 
     } else if (modelType === 'ply') {
-      const prompt = formData.get('prompt') as string;
-      const negativePromptValue = formData.get('negative_prompt');
-      const negativePrompt = negativePromptValue ? negativePromptValue.toString() : undefined;
-      const guidanceScaleValue = formData.get('guidance_scale');
-      const guidanceScale = guidanceScaleValue ? parseFloat(guidanceScaleValue.toString()) : undefined;
-      const maxStepsValue = formData.get('max_steps');
-      const maxSteps = maxStepsValue ? parseInt(maxStepsValue.toString()) : undefined;
-      const avatar = formData.get('avatar') === 'on';
-      const seedValue = formData.get('seed');
-      const seed = seedValue ? parseInt(seedValue.toString()) : undefined;
+      // Handle PLY model creation
 
-      // Build the input object dynamically
-      const input: any = {
+      const prompt = formData.get('ply_prompt') as string;
+
+      // Log the prompt for PLY model
+      console.log('PLY Prompt:', prompt);
+
+      // Input for PLY model prediction
+      const input = {
         prompt,
+        guidance_scale: formData.get('guidance_scale') || '10',
+        max_steps: formData.get('max_steps') || '500',
       };
 
-      if (negativePrompt !== undefined && negativePrompt !== '') {
-        input.negative_prompt = negativePrompt;
-      }
-      if (guidanceScale !== undefined) {
-        input.guidance_scale = guidanceScale;
-      }
-      if (maxSteps !== undefined) {
-        input.max_steps = maxSteps;
-      }
-      if (avatar) {
-        input.avatar = avatar;
-      }
-      if (seed !== undefined) {
-        input.seed = seed;
-      }
+      console.log('Input for PLY model:', input);
 
       prediction = await replicate.predictions.create({
         version: '138abc0aed076d5a1d3c17c5f157e9092e6279c8c1d7d92f1618dc7f707290a4', // GaussianDreamer version
@@ -127,6 +111,8 @@ export async function POST(request: NextRequest) {
       });
 
     } else {
+      // Handle invalid model type
+      console.error('Invalid model type:', modelType);
       return NextResponse.json({ error: 'Invalid model type' }, { status: 400 });
     }
 
@@ -135,6 +121,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ detail: prediction.error.message }, { status: 500 });
     }
 
+    console.log('Prediction success:', prediction);
     return NextResponse.json(prediction, { status: 201 });
 
   } catch (error) {

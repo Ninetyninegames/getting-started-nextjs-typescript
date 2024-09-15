@@ -10,13 +10,18 @@
     "test": "npm run lint && npm run build"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.651.1",
+    "@aws-sdk/s3-request-presigner": "^3.651.1",
     "@react-three/drei": "^9.112.0",
     "@react-three/fiber": "^8.17.7",
+    "aws-sdk": "^2.1691.0",
+    "cloudinary": "^2.4.0",
     "form-data": "^4.0.0",
     "formdata-node": "^6.0.3",
     "formidable": "^3.5.1",
     "jszip": "^3.10.1",
     "next": "^14.2.11",
+    "next-cloudinary": "^6.13.0",
     "react": "^18",
     "react-dom": "^18",
     "replicate": "^0.22.0",
