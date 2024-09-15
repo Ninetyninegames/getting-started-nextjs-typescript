@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'; // AWS SDK v3 for S3
+import { S3Client, PutObjectCommand, ObjectCannedACL } from '@aws-sdk/client-s3'; // AWS SDK v3 for S3
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import Replicate from 'replicate';
 import { v4 as uuidv4 } from 'uuid';
+import AdmZip from 'adm-zip'; // Ensure you have the adm-zip package installed
 
 // Initialize AWS S3 client
 const s3Client = new S3Client({
@@ -33,83 +34,83 @@ export async function POST(request: NextRequest) {
     });
 
     const modelType = formData.get('model_type') as string;
-    console.log('Model Type:', modelType); // Check if the model_type is correctly received
+    const imagePath = formData.get('image_path') as File | string; // Can be a file or a URL
+    const isFileUpload = typeof imagePath !== 'string'; // Check if the imagePath is a file or a URL
+
+    console.log('Model Type:', modelType);
 
     let prediction;
+    let signedUrl: string;
 
-    if (modelType === 'generate_obj_texture') {
-      // Handle OBJ texture generation
+    if (isFileUpload) {
+      // Handle File Upload: The image is a file object
+      const file = imagePath as File;
 
-      const prompt = formData.get('prompt') as string;
-      const shapePath = formData.get('shape_path') as File;
-      console.log('Shape Path:', shapePath);
-
-      if (!shapePath) {
-        console.error('No shape_path provided');
-        return NextResponse.json({ error: 'No shape_path provided' }, { status: 400 });
+      if (!file) {
+        console.error('No image_path provided');
+        return NextResponse.json({ error: 'No image_path provided' }, { status: 400 });
       }
 
-      // Log the shape_path file details
-      console.log('Shape Path Details - Name:', shapePath.name, 'Size:', shapePath.size);
+      // Log the image file details
+      console.log('Image File Details - Name:', file.name, 'Size:', file.size);
 
-      const arrayBuffer = await shapePath.arrayBuffer();
+      const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
       // Upload to S3
-      const fileName = `${uuidv4()}-${shapePath.name}`;
+      const fileName = `${uuidv4()}-${file.name}`;
       const uploadParams = {
         Bucket: process.env.AWS_S3_BUCKET_NAME, // Ensure this environment variable is set
         Key: fileName,
         Body: buffer,
-        ContentType: shapePath.type,
+        ContentType: file.type,
+        ACL: 'public-read' as ObjectCannedACL, // Ensure the correct ACL type
       };
 
       const uploadCommand = new PutObjectCommand(uploadParams);
       await s3Client.send(uploadCommand);
 
-      // Get the signed URL for the uploaded file
-      const signedUrl = await getSignedUrl(s3Client, uploadCommand, { expiresIn: 3600 });
+      // Get the signed URL for the uploaded image file
+      signedUrl = await getSignedUrl(s3Client, uploadCommand, { expiresIn: 3600 });
+    } else {
+      // Handle URL: The imagePath is already a URL
+      signedUrl = imagePath as string;
+    }
 
-      // Input for Replicate API
-      const input = {
-        prompt,
-        shape_path: signedUrl,
-        shape_scale: formData.get('shape_scale') || '0.6',
-        texture_resolution: formData.get('texture_resolution') || '1024',
-        guidance_scale: formData.get('guidance_scale') || '10',
-        texture_interpolation_mode: formData.get('texture_interpolation_mode') || 'bilinear',
-        seed: formData.get('seed') || '0',
-      };
+    // Now proceed to Replicate API (for either URL or uploaded file)
+    const input = {
+      image_path: signedUrl,
+      remove_background: formData.get('remove_background') === 'true',
+      export_video: formData.get('export_video') === 'true',
+      export_texmap: formData.get('export_texmap') === 'true',
+      sample_steps: parseInt(formData.get('sample_steps') as string) || 75,
+      seed: parseInt(formData.get('seed') as string) || 42,
+    };
 
-      console.log('Input for OBJ texture generation:', input);
+    console.log('Input for GLB mesh generation:', input);
 
+    if (modelType === 'generate_glb_mesh') {
+      // Call the Replicate API for generating GLB mesh
       prediction = await replicate.predictions.create({
-        version: '456e72c47358d0da0a1b3002c8cf9f4eb123afa4bb8ff2b521fea40a71746a7f', // Your OBJ texture model version
+        version: 'e353a25cc764e0edb0aa9033df0bf4b82318dcda6d0a0cd9f2aace90566068ac', // GLB Mesh model version
         input,
       });
-
     } else if (modelType === 'ply') {
-      // Handle PLY model creation
-
+      // Handle PLY model creation (for completeness)
       const prompt = formData.get('ply_prompt') as string;
 
-      // Log the prompt for PLY model
-      console.log('PLY Prompt:', prompt);
-
-      // Input for PLY model prediction
       const input = {
         prompt,
-        guidance_scale: formData.get('guidance_scale') || '10',
-        max_steps: formData.get('max_steps') || '500',
+        guidance_scale: parseFloat(formData.get('guidance_scale') as string) || 10,
+        max_steps: parseInt(formData.get('max_steps') as string) || 500,
       };
 
       console.log('Input for PLY model:', input);
 
       prediction = await replicate.predictions.create({
-        version: '138abc0aed076d5a1d3c17c5f157e9092e6279c8c1d7d92f1618dc7f707290a4', // GaussianDreamer version
+        version: '138abc0aed076d5a1d3c17c5f157e9092e6279c8c1d7d92f1618dc7f707290a4', // PLY model version
         input,
       });
-
     } else {
       // Handle invalid model type
       console.error('Invalid model type:', modelType);

@@ -153,7 +153,7 @@ const Your3DViewerComponent = ({ url }: { url: string }) => {
 export default function Home() {
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [modelType, setModelType] = useState<string>("generate_obj_texture");
+  const [modelType, setModelType] = useState<string>("generate_glb_mesh");
   const [imageType, setImageType] = useState<string>("upload");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [funFact, setFunFact] = useState<string>(getRandomFact);
@@ -181,12 +181,12 @@ export default function Home() {
     const formData = new FormData(e.currentTarget);
     formData.append("model_type", modelType);
 
-    // Default values for additional parameters
-    formData.append("shape_scale", "0.6");
-    formData.append("texture_resolution", "1024");
-    formData.append("guidance_scale", "10");
-    formData.append("texture_interpolation_mode", "bilinear");
-    formData.append("seed", "0");
+    // Default values for additional parameters (specific to GLB Mesh)
+    formData.append("remove_background", "true");
+    formData.append("export_video", "true");
+    formData.append("export_texmap", "true");
+    formData.append("sample_steps", "75");
+    formData.append("seed", "42");
 
     try {
       const response = await fetch("/api/predictions", {
@@ -256,7 +256,7 @@ export default function Home() {
 
       <div className="flex flex-col z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex bg-gray-900 p-10 border border-orange-500 rounded-xl shadow-2xl">
         <p className="mb-4 text-lg text-gray-300 font-bold">
-          {modelType === "generate_obj_texture" ? "Generate OBJ Textures:" : "Create PLY Models:"}
+          {modelType === "generate_glb_mesh" ? "Create GLB Mesh:" : "Create PLY Models:"}
         </p>
 
         <select
@@ -264,43 +264,35 @@ export default function Home() {
           onChange={(e) => setModelType(e.target.value)}
           className="mb-4 px-4 py-2 w-full bg-gray-800 border border-orange-500 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
         >
-          <option value="generate_obj_texture">Generate OBJ Texture</option>
+          <option value="generate_glb_mesh">Create GLB Mesh</option>
           <option value="ply">Create Poly (PLY)</option>
         </select>
 
         <form onSubmit={handleSubmit} className="flex flex-col items-center w-full" encType="multipart/form-data">
-          {modelType === "generate_obj_texture" && (
+          {modelType === "generate_glb_mesh" && (
             <>
-              <input
-                type="text"
-                name="prompt"
-                placeholder="Enter a prompt to generate a texture"
-                required
-                className="px-4 py-2 w-full bg-gray-800 text-white border border-orange-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-              />
-
               <select
                 value={imageType}
                 onChange={(e) => setImageType(e.target.value)}
                 className="mb-4 px-4 py-2 w-full bg-gray-800 border border-orange-500 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
               >
-                <option value="upload">Upload OBJ File</option>
-                <option value="url">OBJ File URL</option>
+                <option value="upload">Upload Image</option>
+                <option value="url">Image URL</option>
               </select>
 
               {imageType === "upload" ? (
                 <input
                   type="file"
-                  name="shape_path"
-                  accept=".obj,.off"
+                  name="image_path"
+                  accept=".png,.jpg,.jpeg"
                   required
                   className="px-4 py-2 w-full bg-gray-800 text-white border border-orange-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 mt-2"
                 />
               ) : (
                 <input
                   type="text"
-                  name="shape_path"
-                  placeholder="Enter OBJ File URL"
+                  name="image_path"
+                  placeholder="Enter Image URL"
                   required
                   className="px-4 py-2 w-full bg-gray-800 text-white border border-orange-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 mt-2"
                 />
@@ -324,7 +316,7 @@ export default function Home() {
               }`}
             disabled={isLoading}
           >
-            {isLoading ? "Generating..." : modelType === "ply" ? "Generate PLY" : "Generate OBJ Texture"}
+            {isLoading ? "Generating..." : modelType === "ply" ? "Generate PLY" : "Create GLB Mesh"}
           </button>
         </form>
 
@@ -342,7 +334,7 @@ export default function Home() {
           <div className="mt-4 w-full">
             {prediction.output && prediction.output[0] && (
               <div className="flex flex-col items-center justify-center w-full">
-                {(prediction.output[0].endsWith(".obj") || prediction.output[0].endsWith(".ply")) ? (
+                {(prediction.output[0].endsWith(".glb") || prediction.output[0].endsWith(".ply")) ? (
                   <Your3DViewerComponent url={prediction.output[0]} />
                 ) : (
                   <p className="text-red-500">Invalid output format.</p>
